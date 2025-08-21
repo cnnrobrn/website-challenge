@@ -69,11 +69,15 @@ io.on('connection', (socket) => {
           
           if (gameState?.status === 'finished') {
             // Record scores for both players in leaderboard
+            const winner = gameState.winner;
             gameState.players.forEach(player => {
+              const isWinner = winner && winner.id === player.id;
               leaderboardService.addEntry(
                 player.name,
                 player.score,
-                gameState.type
+                gameState.type,
+                player.type === 'human',
+                isWinner
               );
             });
             
@@ -129,11 +133,15 @@ io.on('connection', (socket) => {
       // Check if game finished after human move
       if (gameState?.status === 'finished') {
         // Record scores for both players
+        const winner = gameState.winner;
         gameState.players.forEach(player => {
+          const isWinner = winner && winner.id === player.id;
           leaderboardService.addEntry(
             player.name,
             player.score,
-            gameState!.type
+            gameState!.type,
+            player.type === 'human',
+            isWinner
           );
         });
         io.to(gameId).emit('game-finished', gameState);
@@ -152,11 +160,15 @@ io.on('connection', (socket) => {
             
             if (gameState?.status === 'finished') {
               // Record scores for both players in leaderboard
+              const winner = gameState.winner;
               gameState.players.forEach(player => {
+                const isWinner = winner && winner.id === player.id;
                 leaderboardService.addEntry(
                   player.name,
                   player.score,
-                  gameState!.type
+                  gameState!.type,
+                  player.type === 'human',
+                  isWinner
                 );
               });
               
@@ -198,8 +210,13 @@ io.on('connection', (socket) => {
   });
 });
 
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({ status: 'ok', games: gameManager.getAvailableGameTypes() });
+});
+
+app.get('/api/win-stats', (_req, res) => {
+  const stats = leaderboardService.getWinStatistics();
+  res.json(stats);
 });
 
 // Leaderboard API endpoints
@@ -226,7 +243,7 @@ app.get('/api/leaderboard/stats/:playerName', (req, res) => {
   res.json(stats);
 });
 
-app.get('/api/leaderboard/game-stats', (req, res) => {
+app.get('/api/leaderboard/game-stats', (_req, res) => {
   const gameStats = leaderboardService.getGameTypeStats();
   res.json(gameStats);
 });
