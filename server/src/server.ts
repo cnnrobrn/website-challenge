@@ -6,6 +6,7 @@ import { config } from 'dotenv';
 import { GameManager } from './services/gameManager';
 import { LeaderboardService } from './services/leaderboard';
 import { RockPaperScissorsGame } from './games/rockPaperScissors';
+import { WordUnscramblerGame } from './games/wordUnscrambler';
 import { Player, GameMove } from './types/game';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -26,8 +27,10 @@ app.use(express.json());
 const gameManager = new GameManager();
 const leaderboardService = new LeaderboardService();
 gameManager.registerGameType('rock-paper-scissors', RockPaperScissorsGame);
+gameManager.registerGameType('word-unscrambler', WordUnscramblerGame);
 
 const activeGames = new Map<string, string>();
+const gameStatePolling = new Map<string, NodeJS.Timeout>();
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -56,6 +59,44 @@ io.on('connection', (socket) => {
         gameId,
         gameState: gameManager.getGameState(gameId)
       });
+
+      // For word unscrambler, poll for state changes during round transitions
+      if (data.gameType === 'word-unscrambler') {
+        let lastRoundComplete = false;
+        
+        const pollInterval = setInterval(() => {
+          const gameState = gameManager.getGameState(gameId);
+          
+          if (gameState?.status === 'finished') {
+            // Record scores for both players in leaderboard
+            gameState.players.forEach(player => {
+              leaderboardService.addEntry(
+                player.name,
+                player.score,
+                gameState.type
+              );
+            });
+            
+            io.to(gameId).emit('game-finished', gameState);
+            
+            clearInterval(pollInterval);
+            gameStatePolling.delete(gameId);
+            return;
+          }
+          
+          // Check if the game state has changed (new round started)
+          const gameData = gameState?.data as any;
+          if (gameData) {
+            // Emit update when transitioning from complete to new round
+            if (lastRoundComplete && !gameData.roundComplete && gameData.currentWord) {
+              io.to(gameId).emit('game-updated', gameState);
+            }
+            lastRoundComplete = gameData.roundComplete;
+          }
+        }, 500);
+        
+        gameStatePolling.set(gameId, pollInterval);
+      }
 
       console.log(`Game created: ${gameId} for ${data.playerName}`);
     } catch (error) {
@@ -135,12 +176,21 @@ io.on('connection', (socket) => {
   });
 
   socket.on('get-game-types', () => {
-    socket.emit('game-types', gameManager.getAvailableGameTypes());
+    const gameTypes = gameManager.getAvailableGameTypes();
+    console.log('Sending game types:', gameTypes);
+    socket.emit('game-types', gameTypes);
   });
 
   socket.on('disconnect', () => {
     const gameId = activeGames.get(socket.id);
     if (gameId) {
+      // Clean up polling if exists
+      const pollInterval = gameStatePolling.get(gameId);
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        gameStatePolling.delete(gameId);
+      }
+      
       gameManager.deleteGame(gameId);
       activeGames.delete(socket.id);
     }
