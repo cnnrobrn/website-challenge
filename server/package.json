@@ -1,7 +1,7 @@
 {
-  "name": "server",
+  "name": "beatgpt-server",
   "version": "1.0.0",
-  "description": "",
+  "description": "BeatGPT Tactical Combat Server - Real-time AI vs Human Gaming Backend",
   "main": "index.js",
   "scripts": {
     "start": "node dist/server.js",

@@ -1,7 +1,7 @@
 {
-  "name": "chatgpt-vs-humans",
+  "name": "beatgpt",
   "version": "1.0.0",
-  "description": "Web application for ChatGPT vs humans minigames",
+  "description": "BeatGPT - Tactical AI Combat System for beatgpt.org",
   "scripts": {
     "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
     "server:dev": "cd server && npm run dev",
