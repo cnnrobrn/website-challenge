@@ -289,31 +289,48 @@ export class WordUnscramblerGame extends BaseGame {
   async getAIMove(): Promise<WordUnscramblerMove> {
     const gameData = this.state.data as WordUnscramblerGameData;
     
-    const prompt = `You are playing a word unscrambling game. You need to unscramble the letters to form a valid English word.
+    const prompt = `Unscramble these letters to form a common English word: ${gameData.scrambledWord}
 
-Scrambled letters: ${gameData.scrambledWord}
-
-You get ONE attempt to solve this. What is the unscrambled word? Respond with ONLY the word, nothing else. Think about common English words that use all these letters exactly once.
+Rules:
+- Use ALL letters exactly once
+- Form a valid English word
+- Respond with ONLY the unscrambled word, no explanation
 
 Examples:
-- GAMIZAN could be AMAZING
-- RETUPCOM could be COMPUTER
+- GAMIZAN → AMAZING
+- RETUPCOM → COMPUTER
+- ELAPP → APPLE
 
-Your guess:`;
+Scrambled: ${gameData.scrambledWord}
+Answer:`;
 
     try {
       const response = await this.openAI.getGameMove('Word Unscrambler', this.state.data, prompt);
-      const guess = (response.guess || response).toString().toUpperCase().trim();
+      console.log('Raw AI response:', response);
       
-      // Basic validation - check if guess uses only available letters
-      if (this.isValidGuess(guess, gameData.scrambledWord)) {
+      let guess: string;
+      if (typeof response === 'string') {
+        guess = response.toUpperCase().trim();
+      } else if (response.guess) {
+        guess = response.guess.toString().toUpperCase().trim();
+      } else if (response.answer) {
+        guess = response.answer.toString().toUpperCase().trim();
+      } else {
+        // Try to extract any text from the response
+        guess = JSON.stringify(response).replace(/[^A-Z]/g, '');
+      }
+      
+      console.log('Processed AI guess:', guess);
+      
+      // Don't validate - let any guess through for fairness
+      if (guess && guess.length > 0) {
         return { guess };
       }
     } catch (error) {
       console.error('AI move generation failed:', error);
     }
     
-    // Fallback: try some basic unscrambling patterns or return scrambled word
+    // Better fallback: try some actual unscrambling logic
     return { guess: this.attemptBasicUnscramble(gameData.scrambledWord) };
   }
 
@@ -333,14 +350,98 @@ Your guess:`;
   }
 
   private attemptBasicUnscramble(scrambled: string): string {
-    // Very basic fallback - just return the scrambled word or try some common patterns
+    // Try multiple unscrambling strategies
     const letters = scrambled.split('');
     
-    // Try reversing
-    const reversed = letters.reverse().join('');
+    // Strategy 1: Try reversing
+    const reversed = [...letters].reverse().join('');
+    if (this.isCommonWord(reversed)) return reversed;
     
-    // Return scrambled as last resort
-    return scrambled;
+    // Strategy 2: Try some common letter patterns
+    const patterns = [
+      // Try putting vowels first
+      this.arrangeVowelsFirst(letters),
+      // Try alphabetical order
+      [...letters].sort().join(''),
+      // Try reverse alphabetical
+      [...letters].sort().reverse().join(''),
+      // Try common prefixes
+      this.tryCommonPrefixes(letters),
+    ];
+    
+    for (const pattern of patterns) {
+      if (pattern && this.isCommonWord(pattern)) {
+        return pattern;
+      }
+    }
+    
+    // Last resort: just try the original word from our database that matches these letters
+    const possibleWord = this.findWordWithLetters(letters);
+    return possibleWord || scrambled; // Return something, even if wrong
+  }
+
+  private isCommonWord(word: string): boolean {
+    // Check against our word database
+    return this.getAllPossibleWords().includes(word);
+  }
+
+  private getAllPossibleWords(): string[] {
+    // Import from our word database
+    const { ALL_WORDS } = require('../data/words');
+    return ALL_WORDS;
+  }
+
+  private arrangeVowelsFirst(letters: string[]): string {
+    const vowels = letters.filter(l => 'AEIOU'.includes(l));
+    const consonants = letters.filter(l => !'AEIOU'.includes(l));
+    return [...vowels, ...consonants].join('');
+  }
+
+  private tryCommonPrefixes(letters: string[]): string {
+    const prefixes = ['THE', 'AND', 'FOR', 'ARE', 'BUT', 'NOT', 'YOU', 'ALL', 'CAN', 'HAD', 'HER', 'WAS', 'ONE', 'OUR', 'OUT', 'DAY', 'GET', 'HAS', 'HIM', 'HOW', 'ITS', 'MAY', 'NEW', 'NOW', 'OLD', 'SEE', 'TWO', 'WAY', 'WHO', 'BOY', 'DID', 'HAS', 'LET', 'PUT', 'SAY', 'SHE', 'TOO', 'USE'];
+    
+    for (const prefix of prefixes) {
+      if (prefix.split('').every(letter => letters.includes(letter))) {
+        // Try building word with this prefix
+        const remaining = [...letters];
+        for (const letter of prefix) {
+          const index = remaining.indexOf(letter);
+          if (index > -1) remaining.splice(index, 1);
+        }
+        const attempt = prefix + remaining.join('');
+        if (this.isCommonWord(attempt)) return attempt;
+      }
+    }
+    return '';
+  }
+
+  private findWordWithLetters(letters: string[]): string | null {
+    const allWords = this.getAllPossibleWords();
+    const letterCount = letters.reduce((acc, letter) => {
+      acc[letter] = (acc[letter] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    for (const word of allWords) {
+      if (word.length === letters.length) {
+        const wordLetters = word.split('').reduce((acc, letter) => {
+          acc[letter] = (acc[letter] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+
+        // Check if letter counts match exactly
+        const matches = Object.keys(letterCount).every(letter => 
+          wordLetters[letter] === letterCount[letter]
+        ) && Object.keys(wordLetters).every(letter => 
+          letterCount[letter] === wordLetters[letter]
+        );
+
+        if (matches) {
+          return word;
+        }
+      }
+    }
+    return null;
   }
 
   isValidMove(move: any, playerId: string): boolean {
