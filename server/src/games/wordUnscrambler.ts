@@ -156,18 +156,33 @@ export class WordUnscramblerGame extends BaseGame {
         
         console.log(`AI guess: "${aiResponse.guess}" at time: ${aiResponse.time - roundStartTime}ms`);
         
-        // Check if we need to end the round (if human already guessed wrong)
-        if (gameData.humanGuess && gameData.humanGuess !== gameData.currentWord) {
-          // Human was wrong, now check AI
-          const aiCorrect = aiResponse.guess === gameData.currentWord;
-          const humanPlayer = this.state.players.find(p => p.type === 'human');
-          const aiPlayer = this.state.players.find(p => p.type === 'ai');
-          
-          if (aiCorrect) {
-            this.endRound(aiPlayer!.id, 'AI was correct, human was wrong');
+        const aiCorrect = aiResponse.guess === gameData.currentWord;
+        const humanPlayer = this.state.players.find(p => p.type === 'human');
+        const aiPlayer = this.state.players.find(p => p.type === 'ai');
+        
+        if (aiCorrect) {
+          // AI got it right!
+          if (!gameData.humanGuess) {
+            // Human hasn't guessed yet - AI wins immediately
+            this.endRound(aiPlayer!.id, 'AI answered correctly first');
           } else {
+            // Human already guessed - check if human was right and faster
+            const humanCorrect = gameData.humanGuess === gameData.currentWord;
+            if (humanCorrect && gameData.humanGuessTime! < aiResponse.time) {
+              // Human was correct and faster - already handled in processMove
+              return;
+            } else {
+              // AI wins (human wrong or AI was faster)
+              this.endRound(aiPlayer!.id, humanCorrect ? 'AI was faster' : 'AI was correct, human was wrong');
+            }
+          }
+        } else {
+          // AI was wrong
+          if (gameData.humanGuess && gameData.humanGuess !== gameData.currentWord) {
+            // Both were wrong
             this.endRound('tie', 'Both were wrong');
           }
+          // If human hasn't guessed yet or human was right, wait for human/round already ended
         }
       }
     }).catch(error => {
