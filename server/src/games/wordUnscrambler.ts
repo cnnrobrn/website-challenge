@@ -59,7 +59,10 @@ export class WordUnscramblerGame extends BaseGame {
   }
 
   async processMove(move: GameMove): Promise<void> {
+    console.log('Processing move:', JSON.stringify(move));
+    
     if (!this.isValidMove(move.move, move.playerId)) {
+      console.log('Move validation failed');
       throw new Error('Invalid move');
     }
 
@@ -67,6 +70,8 @@ export class WordUnscramblerGame extends BaseGame {
     const guess = (move.move as WordUnscramblerMove).guess.toUpperCase();
     const humanPlayer = this.state.players.find(p => p.type === 'human');
     const aiPlayer = this.state.players.find(p => p.type === 'ai');
+    
+    console.log(`Human guess: "${guess}" for word: "${gameData.currentWord}" (scrambled: "${gameData.scrambledWord}")`);
     
     if (!humanPlayer || !aiPlayer) {
       throw new Error('Invalid player configuration');
@@ -261,8 +266,8 @@ Your guess:`;
     // Check if human has already submitted a guess this round
     if (gameData.humanGuess !== undefined) return false;
     
-    // Basic letter validation
-    return this.isValidGuess(guess.toUpperCase(), gameData.scrambledWord);
+    // Allow any non-empty guess - correctness will be determined during scoring
+    return true;
   }
 
   private selectRandomWord(): string {
