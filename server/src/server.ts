@@ -105,29 +105,49 @@ io.on('connection', (socket) => {
 
       const game = gameManager.getGame(gameId);
       if (game && gameState?.status === 'playing') {
-        const aiPlayer = gameState.players.find(p => p.type === 'ai');
-        if (aiPlayer) {
-          try {
-            await gameManager.processAIMove(gameId, aiPlayer.id);
-            gameState = gameManager.getGameState(gameId);
-            
-            io.to(gameId).emit('game-updated', gameState);
-            
-            if (gameState?.status === 'finished') {
-              // Record scores for both players in leaderboard
-              gameState.players.forEach(player => {
-                leaderboardService.addEntry(
-                  player.name,
-                  player.score,
-                  gameState!.type
-                );
-              });
+        // Skip AI processing for word-unscrambler since it handles AI moves internally
+        if (gameState.type !== 'word-unscrambler') {
+          const aiPlayer = gameState.players.find(p => p.type === 'ai');
+          if (aiPlayer) {
+            try {
+              await gameManager.processAIMove(gameId, aiPlayer.id);
+              gameState = gameManager.getGameState(gameId);
               
-              io.to(gameId).emit('game-finished', gameState);
+              io.to(gameId).emit('game-updated', gameState);
+              
+              if (gameState?.status === 'finished') {
+                // Record scores for both players in leaderboard
+                gameState.players.forEach(player => {
+                  leaderboardService.addEntry(
+                    player.name,
+                    player.score,
+                    gameState!.type
+                  );
+                });
+                
+                io.to(gameId).emit('game-finished', gameState);
+              }
+            } catch (error) {
+              console.error('AI move error:', error);
+              io.to(gameId).emit('error', { message: 'AI move failed' });
             }
-          } catch (error) {
-            console.error('AI move error:', error);
-            io.to(gameId).emit('error', { message: 'AI move failed' });
+          }
+        } else {
+          // For word-unscrambler, get updated state since AI is handled internally
+          gameState = gameManager.getGameState(gameId);
+          io.to(gameId).emit('game-updated', gameState);
+          
+          if (gameState?.status === 'finished') {
+            // Record scores for both players in leaderboard
+            gameState.players.forEach(player => {
+              leaderboardService.addEntry(
+                player.name,
+                player.score,
+                gameState!.type
+              );
+            });
+            
+            io.to(gameId).emit('game-finished', gameState);
           }
         }
       }

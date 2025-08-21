@@ -153,10 +153,8 @@ export class WordUnscramblerGame extends BaseGame {
       this.state.status = 'finished';
       this.state.winner = result.winner;
     } else {
-      // Start next round after a brief delay
-      setTimeout(async () => {
-        await this.startNextRound();
-      }, 3000); // 3 second delay to show results
+      // Start next round immediately
+      await this.startNextRound();
     }
   }
 
