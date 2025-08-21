@@ -1,6 +1,7 @@
 import { BaseGame, GameConfig, GameState, Player, GameMove, GameResult } from '../types/game';
 import { OpenAIService } from '../services/openai';
 import { getRandomWord } from '../data/words';
+import OpenAI from 'openai';
 
 interface WordUnscramblerMove {
   guess: string;
@@ -42,6 +43,7 @@ export class WordUnscramblerGame extends BaseGame {
 
   state: GameState;
   private openAI = new OpenAIService();
+  private client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   private pendingAIResponse?: Promise<{ guess: string; time: number }>;
 
   constructor() {
@@ -305,24 +307,30 @@ Scrambled: ${gameData.scrambledWord}
 Answer:`;
 
     try {
-      const response = await this.openAI.getGameMove('Word Unscrambler', this.state.data, prompt);
-      console.log('Raw AI response:', response);
+      // Use a direct text-based approach instead of JSON for word unscrambling
+      const response = await this.client.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "system",
+            content: "You are playing a word unscrambling game. You must respond with ONLY the unscrambled word, nothing else. No JSON, no explanation, just the word."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 50
+      });
+
+      const content = response.choices[0].message.content;
+      if (!content) throw new Error('No response from OpenAI');
       
-      let guess: string;
-      if (typeof response === 'string') {
-        guess = response.toUpperCase().trim();
-      } else if (response.guess) {
-        guess = response.guess.toString().toUpperCase().trim();
-      } else if (response.answer) {
-        guess = response.answer.toString().toUpperCase().trim();
-      } else {
-        // Try to extract any text from the response
-        guess = JSON.stringify(response).replace(/[^A-Z]/g, '');
-      }
-      
+      const guess = content.toUpperCase().trim().replace(/[^A-Z]/g, '');
+      console.log('Raw AI response:', content);
       console.log('Processed AI guess:', guess);
       
-      // Don't validate - let any guess through for fairness
       if (guess && guess.length > 0) {
         return { guess };
       }
