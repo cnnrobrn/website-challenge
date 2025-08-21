@@ -6,6 +6,7 @@ import { config } from 'dotenv';
 import { GameManager } from './services/gameManager';
 import { LeaderboardService } from './services/leaderboard';
 import { RockPaperScissorsGame } from './games/rockPaperScissors';
+import { WordUnscramblerGame } from './games/wordUnscrambler';
 import { Player, GameMove } from './types/game';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -26,6 +27,9 @@ app.use(express.json());
 const gameManager = new GameManager();
 const leaderboardService = new LeaderboardService();
 gameManager.registerGameType('rock-paper-scissors', RockPaperScissorsGame);
+gameManager.registerGameType('word-unscrambler', WordUnscramblerGame);
+
+console.log('Available games:', gameManager.getAvailableGameTypes());
 
 const activeGames = new Map<string, string>();
 
