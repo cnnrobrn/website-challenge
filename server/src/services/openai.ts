@@ -14,26 +14,42 @@ export class OpenAIService {
 
   async getGameMove(gameType: string, gameState: any, prompt: string): Promise<any> {
     try {
+      // For chess, we expect a simple string response, not JSON
+      const isChess = gameType.toLowerCase() === 'chess';
+      
       const response = await this.client.chat.completions.create({
-        model: "gpt-4",
+        model: "gpt-3.5-turbo",
         messages: [
           {
             role: "system",
-            content: `You are playing a game called "${gameType}". You must respond with valid JSON that represents your move. Be competitive and strategic.`
+            content: isChess 
+              ? `You are playing chess. Respond with ONLY the move in the exact format requested. No explanations, no JSON, just the move.`
+              : `You are playing a game called "${gameType}". You must respond with valid JSON that represents your move. Be competitive and strategic.`
           },
           {
             role: "user",
-            content: `Current game state: ${JSON.stringify(gameState)}\n\n${prompt}\n\nRespond with only valid JSON representing your move.`
+            content: prompt
           }
         ],
         temperature: 0.7,
-        max_tokens: 500
+        max_tokens: isChess ? 20 : 500
       });
 
       const content = response.choices[0].message.content;
       if (!content) throw new Error('No response from OpenAI');
 
-      return JSON.parse(content.trim());
+      // For chess, return the raw string
+      if (isChess) {
+        return content.trim();
+      }
+      
+      // For other games, parse as JSON
+      try {
+        return JSON.parse(content.trim());
+      } catch (e) {
+        // If JSON parsing fails, return the raw content
+        return content.trim();
+      }
     } catch (error) {
       console.error('OpenAI API error:', error);
       throw error;

@@ -7,6 +7,7 @@ import { GameManager } from './services/gameManager';
 import { LeaderboardService } from './services/leaderboard';
 import { RockPaperScissorsGame } from './games/rockPaperScissors';
 import { WordUnscramblerGame } from './games/wordUnscrambler';
+import { ChessGame } from './games/chess';
 import { Player, GameMove } from './types/game';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -28,6 +29,7 @@ const gameManager = new GameManager();
 const leaderboardService = new LeaderboardService();
 gameManager.registerGameType('rock-paper-scissors', RockPaperScissorsGame);
 gameManager.registerGameType('word-unscrambler', WordUnscramblerGame);
+gameManager.registerGameType('chess', ChessGame);
 
 const activeGames = new Map<string, string>();
 const gameStatePolling = new Map<string, NodeJS.Timeout>();
@@ -102,6 +104,34 @@ io.on('connection', (socket) => {
         gameStatePolling.set(gameId, pollInterval);
       }
 
+      // For chess, trigger AI's first move if AI is white
+      if (data.gameType === 'chess') {
+        const gameState = gameManager.getGameState(gameId);
+        if (gameState) {
+          const gameData = gameState.data as any;
+          const aiPlayer = gameState.players.find(p => p.type === 'ai');
+          if (aiPlayer && gameData.playerColors && gameData.playerColors[aiPlayer.id] === 'w') {
+            // AI plays white, so make the first move after a short delay
+            setTimeout(async () => {
+              try {
+                console.log('AI making first move as white');
+                await gameManager.processAIMove(gameId, aiPlayer.id);
+                const updatedGameState = gameManager.getGameState(gameId);
+                console.log('AI first move completed');
+                io.to(gameId).emit('game-updated', updatedGameState);
+              } catch (error) {
+                console.error('AI first move error:', error);
+                // Still emit the current state so game doesn't freeze
+                const currentState = gameManager.getGameState(gameId);
+                if (currentState) {
+                  io.to(gameId).emit('game-updated', currentState);
+                }
+              }
+            }, 1500);
+          }
+        }
+      }
+
       console.log(`Game created: ${gameId} for ${data.playerName}`);
     } catch (error) {
       socket.emit('error', { message: 'Failed to create game' });
@@ -153,8 +183,10 @@ io.on('connection', (socket) => {
         const aiPlayer = gameState.players.find(p => p.type === 'ai');
         if (aiPlayer) {
           try {
+            console.log('Processing AI move for game:', gameId);
             await gameManager.processAIMove(gameId, aiPlayer.id);
             gameState = gameManager.getGameState(gameId);
+            console.log('AI move successful, game status:', gameState?.status);
             
             io.to(gameId).emit('game-updated', gameState);
             
@@ -176,7 +208,13 @@ io.on('connection', (socket) => {
             }
           } catch (error) {
             console.error('AI move error:', error);
-            io.to(gameId).emit('error', { message: 'AI move failed' });
+            // Don't let the game freeze - emit an update even on error
+            const currentState = gameManager.getGameState(gameId);
+            if (currentState) {
+              io.to(gameId).emit('game-updated', currentState);
+            }
+            // Notify user of the error
+            io.to(gameId).emit('error', { message: 'AI had trouble making a move. You can continue playing.' });
           }
         }
       }
