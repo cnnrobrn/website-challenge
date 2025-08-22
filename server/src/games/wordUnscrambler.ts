@@ -19,6 +19,7 @@ interface WordUnscramblerGameData {
   aiGuessTime: number | null;
   aiResponseReady: boolean;
   preFetchedAIGuess?: string;
+  lastAIPrompt?: string; // Store the last prompt sent to OpenAI
   wordHistory: Array<{
     round: number;
     word: string;
@@ -106,9 +107,13 @@ export class WordUnscramblerGame extends BaseGame {
 
   private async preFetchAIMove(): Promise<void> {
     const gameData = this.state.data as WordUnscramblerGameData;
+    const aiPlayer = this.state.players.find(p => p.type === 'ai');
+    const humanPlayer = this.state.players.find(p => p.type === 'human');
     
     try {
-      const prompt = `The scrambled letters are: "${gameData.scrambledWord}"
+      const prompt = `You are playing Word Unscrambler as ${aiPlayer?.name || 'AI'} against ${humanPlayer?.name || 'opponent'}.
+      
+      The scrambled letters are: "${gameData.scrambledWord}"
       
       You need to unscramble these letters to form a valid English word.
       The word has ${gameData.scrambledWord.length} letters.
@@ -118,7 +123,12 @@ export class WordUnscramblerGame extends BaseGame {
       2. What common English words can be formed from these letters?
       3. Make sure your answer uses ALL the letters exactly once.
       
+      Try to solve this quickly to beat ${humanPlayer?.name || 'your opponent'}!
+      
       Respond with a JSON object containing only: {"guess": "YOUR_WORD_IN_UPPERCASE"}`;
+
+      // Store the prompt for client display
+      gameData.lastAIPrompt = prompt;
 
       const aiMove = await this.openAI.getGameMove('word-unscrambler', gameData, prompt);
 
@@ -126,32 +136,13 @@ export class WordUnscramblerGame extends BaseGame {
       gameData.aiResponseReady = true;
     } catch (error) {
       console.error('Failed to pre-fetch AI move:', error);
-      gameData.preFetchedAIGuess = this.generateFallbackGuess(gameData.scrambledWord);
-      gameData.aiResponseReady = true;
+      // AI fails - no fallback
+      gameData.preFetchedAIGuess = undefined;
+      gameData.aiResponseReady = false;
     }
   }
 
-  private generateFallbackGuess(scrambled: string): string {
-    const possibleWords = ALL_WORDS.filter(word => 
-      word.length === scrambled.length && 
-      this.isAnagram(word, scrambled)
-    );
-    
-    if (possibleWords.length > 0) {
-      return possibleWords[0];
-    }
-    
-    return scrambled;
-  }
 
-  private isAnagram(word1: string, word2: string): boolean {
-    if (word1.length !== word2.length) return false;
-    
-    const sorted1 = word1.split('').sort().join('');
-    const sorted2 = word2.split('').sort().join('');
-    
-    return sorted1 === sorted2;
-  }
 
   async processMove(move: GameMove): Promise<void> {
     const gameData = this.state.data as WordUnscramblerGameData;
@@ -196,7 +187,8 @@ export class WordUnscramblerGame extends BaseGame {
     const aiPlayer = this.state.players.find(p => p.type === 'ai');
     if (!aiPlayer) return;
 
-    gameData.aiGuess = gameData.preFetchedAIGuess || this.generateFallbackGuess(gameData.scrambledWord);
+    // If AI has no pre-fetched guess, it fails (gives empty/wrong answer)
+    gameData.aiGuess = gameData.preFetchedAIGuess || 'FAILED';
     gameData.aiGuessTime = Date.now();
   }
 
@@ -303,7 +295,11 @@ export class WordUnscramblerGame extends BaseGame {
 
   async getAIMove(): Promise<any> {
     const gameData = this.state.data as WordUnscramblerGameData;
-    return { guess: gameData.preFetchedAIGuess || gameData.scrambledWord };
+    // If no pre-fetched guess, AI fails
+    if (!gameData.preFetchedAIGuess) {
+      throw new Error('AI failed to generate a guess');
+    }
+    return { guess: gameData.preFetchedAIGuess };
   }
 
   isValidMove(move: any, playerId: string): boolean {

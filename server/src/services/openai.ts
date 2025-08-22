@@ -3,6 +3,31 @@ import { config } from 'dotenv';
 
 config();
 
+// Configuration for each game type
+interface GameAIConfig {
+  responseFormat: 'simple' | 'json';
+  maxTokens: number;
+  systemPrompt?: string;
+}
+
+const GAME_CONFIGS: Record<string, GameAIConfig> = {
+  'chess': {
+    responseFormat: 'simple',
+    maxTokens: 20,
+    systemPrompt: 'You are playing chess. Respond with ONLY the move in the exact format requested. No explanations, no JSON, just the move.'
+  },
+  'rock paper scissors': {
+    responseFormat: 'simple',
+    maxTokens: 20,
+    systemPrompt: 'You are playing Rock Paper Scissors. Respond with ONLY one word: rock, paper, or scissors. No explanations, no JSON, just the single word.'
+  },
+  'word-unscrambler': {
+    responseFormat: 'json',
+    maxTokens: 100,
+    systemPrompt: 'You are playing Word Unscrambler. You must respond with valid JSON in the exact format requested. Be competitive and try to solve the puzzle correctly.'
+  }
+};
+
 export class OpenAIService {
   private client: OpenAI;
 
@@ -14,17 +39,20 @@ export class OpenAIService {
 
   async getGameMove(gameType: string, gameState: any, prompt: string): Promise<any> {
     try {
-      // For chess, we expect a simple string response, not JSON
-      const isChess = gameType.toLowerCase() === 'chess';
+      // Get game-specific configuration
+      const gameTypeLower = gameType.toLowerCase();
+      const config = GAME_CONFIGS[gameTypeLower] || {
+        responseFormat: 'json',
+        maxTokens: 500,
+        systemPrompt: `You are playing a game called "${gameType}". You must respond with valid JSON that represents your move. Be competitive and strategic.`
+      };
       
       const response = await this.client.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [
           {
             role: "system",
-            content: isChess 
-              ? `You are playing chess. Respond with ONLY the move in the exact format requested. No explanations, no JSON, just the move.`
-              : `You are playing a game called "${gameType}". You must respond with valid JSON that represents your move. Be competitive and strategic.`
+            content: config.systemPrompt || `You are playing ${gameType}. Follow the instructions exactly.`
           },
           {
             role: "user",
@@ -32,23 +60,24 @@ export class OpenAIService {
           }
         ],
         temperature: 0.7,
-        max_tokens: isChess ? 20 : 500
+        max_tokens: config.maxTokens
       });
 
       const content = response.choices[0].message.content;
       if (!content) throw new Error('No response from OpenAI');
 
-      // For chess, return the raw string
-      if (isChess) {
+      // Handle response based on format configuration
+      if (config.responseFormat === 'simple') {
         return content.trim();
       }
       
-      // For other games, parse as JSON
+      // For JSON responses
       try {
         return JSON.parse(content.trim());
       } catch (e) {
-        // If JSON parsing fails, return the raw content
-        return content.trim();
+        console.error('Failed to parse JSON response:', content);
+        // If JSON parsing fails but we expected JSON, throw error
+        throw new Error(`Invalid JSON response from AI: ${content}`);
       }
     } catch (error) {
       console.error('OpenAI API error:', error);

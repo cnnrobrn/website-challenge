@@ -6,6 +6,7 @@ type RPSMove = 'rock' | 'paper' | 'scissors';
 interface RPSGameData {
   moves: Record<string, RPSMove>;
   aiMoveReady?: RPSMove; // Pre-fetched AI move for current round
+  lastAIPrompt?: string; // Store the last prompt sent to OpenAI
   roundHistory: Array<{
     round: number;
     moves: Record<string, RPSMove>;
@@ -135,8 +136,8 @@ export class RockPaperScissorsGame extends BaseGame {
       return move;
     }
     
-    // Fallback to generating move on demand (shouldn't happen in normal flow)
-    return this.generateAIMove();
+    // No fallback - if pre-fetch failed, AI loses
+    throw new Error('AI failed to generate a move');
   }
 
   private async preFetchAIMove(): Promise<void> {
@@ -146,36 +147,59 @@ export class RockPaperScissorsGame extends BaseGame {
       gameData.aiMoveReady = move;
     } catch (error) {
       console.error('Error pre-fetching AI move:', error);
-      // Set a random move as fallback
-      gameData.aiMoveReady = ['rock', 'paper', 'scissors'][Math.floor(Math.random() * 3)] as RPSMove;
+      // AI fails - no fallback, let it fail
+      gameData.aiMoveReady = undefined;
     }
   }
 
   private async generateAIMove(): Promise<RPSMove> {
     const gameData = this.state.data as RPSGameData;
-    const prompt = `You are playing Rock Paper Scissors. 
+    
+    // Map player IDs to usernames for the prompt
+    const getPlayerName = (playerId: string) => {
+      const player = this.state.players.find(p => p.id === playerId);
+      return player?.name || playerId;
+    };
+    
+    // Format round history with usernames
+    const formattedHistory = gameData.roundHistory.map(round => {
+      const formattedMoves: Record<string, string> = {};
+      for (const [playerId, move] of Object.entries(round.moves)) {
+        formattedMoves[getPlayerName(playerId)] = move;
+      }
+      
+      return {
+        round: round.round,
+        moves: formattedMoves,
+        winner: round.winner === 'tie' ? 'tie' : getPlayerName(round.winner)
+      };
+    });
+    
+    const aiPlayer = this.state.players.find(p => p.id.startsWith('ai-'));
+    const humanPlayer = this.state.players.find(p => !p.id.startsWith('ai-'));
+    
+    const prompt = `You are playing Rock Paper Scissors as ${aiPlayer?.name || 'AI'} against ${humanPlayer?.name || 'opponent'}. 
     
 Round ${this.state.currentRound + 1} of ${this.state.maxRounds}.
-Previous rounds: ${JSON.stringify(gameData.roundHistory)}
+Previous rounds: ${JSON.stringify(formattedHistory)}
 
 Your options are: "rock", "paper", or "scissors"
-Try to predict your opponent's pattern and counter it.
+Try to predict ${humanPlayer?.name || 'your opponent'}'s pattern and counter it.
 
 Respond with only one word: rock, paper, or scissors`;
 
-    try {
-      const response = await this.openAI.getGameMove('Rock Paper Scissors', this.state, prompt);
-      const move = typeof response === 'string' ? response.toLowerCase() : response.move?.toLowerCase();
-      
-      if (['rock', 'paper', 'scissors'].includes(move)) {
-        return move as RPSMove;
-      }
-      
-      return ['rock', 'paper', 'scissors'][Math.floor(Math.random() * 3)] as RPSMove;
-    } catch (error) {
-      console.error('AI move error, using random:', error);
-      return ['rock', 'paper', 'scissors'][Math.floor(Math.random() * 3)] as RPSMove;
+    // Store the prompt for client display
+    gameData.lastAIPrompt = prompt;
+
+    const response = await this.openAI.getGameMove('Rock Paper Scissors', this.state, prompt);
+    const move = typeof response === 'string' ? response.toLowerCase() : response.move?.toLowerCase();
+    
+    if (['rock', 'paper', 'scissors'].includes(move)) {
+      return move as RPSMove;
     }
+    
+    // If AI gives invalid response, throw error instead of using fallback
+    throw new Error('AI provided invalid move: ' + move);
   }
 
   isValidMove(move: any, playerId: string): boolean {

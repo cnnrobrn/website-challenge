@@ -11,25 +11,70 @@ BeatGPT is a cutting-edge tactical combat platform where human commanders engage
 
 - ⚡ **Instant AI Response System** - Pre-fetched moves eliminate combat delays
 - 🎮 **Modular Tactical Framework** - Easily deploy new combat scenarios
-- 🤖 **Advanced AI Integration** - Powered by OpenAI GPT-4 tactical analysis
+- 🤖 **Advanced AI Integration** - Powered by OpenAI GPT-3.5 Turbo tactical analysis
 - 📡 **Real-time Combat Network** - Socket.IO powered tactical communications
 - 🏆 **Elite Ranking System** - Track your tactical superiority across all operations
 - 🎨 **Retro-Futuristic Interface** - Immersive terminal-based combat UI
+- ⚠️ **No Fallback Mode** - AI fails completely if connection lost (human wins by default)
 
 ## 🚀 Current Operations
 
-### Tactical RPS Combat
+### ♟️ Strategic Chess Operations
+- Classical chess with full rule implementation
+- AI opponent powered by GPT-3.5 with positional analysis
+- Real-time board visualization and move validation
+- Advanced tactical pattern recognition
+
+### ✊ Tactical RPS Combat
 - 5-round strategic engagement protocol
 - AI opponent utilizes pattern analysis and strategic countermeasures
 - Real-time tactical feedback and engagement analysis
 - Military-grade ranking system with combat medals
 
+### 🔤 Word Unscrambler Cipher Operations
+- Speed-based word puzzle combat
+- Race against AI to decode scrambled intelligence
+- Timed rounds with performance tracking
+- Pattern recognition and linguistic analysis
+
 ## 🏗️ System Architecture
 
 **Command Interface**: React + TypeScript with retro-futuristic styling  
 **Combat Server**: Node.js + Express + Socket.IO tactical backend  
-**AI Tactical Core**: OpenAI GPT-4 strategic analysis engine  
+**AI Tactical Core**: OpenAI GPT-3.5 Turbo strategic analysis engine  
 **Communication Network**: WebSocket real-time combat protocols  
+
+### 🤖 ChatGPT Integration Architecture
+
+The AI system uses a configuration-based approach for consistent game handling:
+
+```typescript
+// Each game has specific AI response requirements
+const GAME_CONFIGS = {
+  'chess': {
+    responseFormat: 'simple',      // Returns plain text moves
+    maxTokens: 20,                  // Efficient token usage
+    systemPrompt: 'chess-specific' // Tactical chess instructions
+  },
+  'rock paper scissors': {
+    responseFormat: 'simple',      // Single word response
+    maxTokens: 20,                  // Minimal token usage
+    systemPrompt: 'rps-specific'   // Pattern analysis prompts
+  },
+  'word-unscrambler': {
+    responseFormat: 'json',        // Structured JSON response
+    maxTokens: 100,                // Allows complex reasoning
+    systemPrompt: 'puzzle-specific' // Linguistic analysis prompts
+  }
+};
+```
+
+**Key Features:**
+- ✅ Unified API handler for all game types
+- ✅ Game-specific response format handling
+- ✅ Optimized token usage per game type
+- ❌ No fallback mechanisms - AI failures result in human victory
+- ⚡ Pre-fetching for instant responses  
 
 ## 🛠️ Deployment Instructions
 
@@ -46,15 +91,21 @@ npm run install:all
 Create tactical configuration in server directory:
 ```bash
 cd server
-cp .env.example .env
+# Create .env file if it doesn't exist
+touch .env
 ```
 
 Configure your AI tactical parameters in `server/.env`:
 ```
-OPENAI_API_KEY=your_classified_api_key_here
+OPENAI_API_KEY=sk-proj-YOUR_API_KEY_HERE
 PORT=4000
 NODE_ENV=development
 ```
+
+⚠️ **CRITICAL**: Ensure your OpenAI API key:
+- Has sufficient credits for gameplay
+- Is kept confidential (never commit to git)
+- Has access to GPT-3.5 Turbo model
 
 ### 3. Deploy Tactical Systems
 From command center (root directory):
@@ -191,6 +242,13 @@ This tactical system is designed for deployment to **beatgpt.org** with:
 - All combat data maintained in secure memory systems
 - Automatic cleanup of abandoned tactical sessions
 - Consider persistent storage for production tactical archives
+
+### 🎯 AI Behavior Changes (Latest Update)
+- **No Fallback Mechanisms**: If the ChatGPT API fails, the AI loses that round
+- **Strict Response Validation**: Invalid AI responses result in immediate failure
+- **Configuration-Based System**: Each game type has specific AI handling rules
+- **Pre-fetching Strategy**: AI moves are generated in advance for instant responses
+- **Human Advantage on Failure**: Any API error or invalid response grants victory to human player
 
 ---
 

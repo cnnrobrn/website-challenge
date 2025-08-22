@@ -19,6 +19,7 @@ interface ChessGameData {
   }>;
   lastMove?: { from: string; to: string };
   currentTurn: 'w' | 'b';
+  lastAIPrompt?: string; // Store the last prompt sent to OpenAI
 }
 
 export class ChessGame extends BaseGame {
@@ -157,6 +158,7 @@ export class ChessGame extends BaseGame {
   private async generateAIMove(): Promise<ChessMove | null> {
     const gameData = this.state.data as ChessGameData;
     const aiPlayer = this.state.players.find(p => p.type === 'ai');
+    const humanPlayer = this.state.players.find(p => p.type === 'human');
     
     if (!aiPlayer) return null;
     
@@ -165,12 +167,14 @@ export class ChessGame extends BaseGame {
     
     if (validMoves.length === 0) return null;
 
+    // Format recent moves with player names
     const recentMoves = gameData.moveHistory.slice(-10).map(h => {
-      return `${h.move.from}-${h.move.to}`;
+      const player = this.state.players.find(p => p.id === h.player);
+      return `${player?.name || h.player}: ${h.move.from}-${h.move.to}`;
     }).join(', ');
 
     const isInCheck = this.chess.isCheck();
-    const prompt = `You are playing chess as ${aiColor === 'w' ? 'White' : 'Black'}.
+    const prompt = `You are playing chess as ${aiPlayer.name} (${aiColor === 'w' ? 'White' : 'Black'}) against ${humanPlayer?.name || 'opponent'}.
     
 Current board position (FEN): ${this.chess.fen()}
 Recent moves: ${recentMoves || 'Opening position'}
@@ -190,6 +194,9 @@ ${!isInCheck ? `1. Tactical opportunities (captures, forks, pins)
 4. Endgame principles if applicable` : ''}
 
 Respond with ONLY the move in format: from-to (e.g., "e2-e4")`;
+
+    // Store the prompt for client display
+    gameData.lastAIPrompt = prompt;
 
     try {
       const response = await this.openAI.getGameMove('Chess', this.state, prompt);
