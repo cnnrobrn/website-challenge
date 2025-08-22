@@ -18,7 +18,6 @@ interface ChessGameData {
     timestamp: number;
   }>;
   lastMove?: { from: string; to: string };
-  aiMoveReady?: ChessMove;
   currentTurn: 'w' | 'b';
 }
 
@@ -67,9 +66,7 @@ export class ChessGame extends BaseGame {
     this.state.status = 'playing';
     this.state.currentRound = 0;
 
-    if (aiColor === 'w') {
-      await this.preFetchAIMove();
-    }
+    // Don't pre-fetch for chess - we need to respond to actual board positions
   }
 
   async processMove(move: GameMove): Promise<void> {
@@ -128,15 +125,8 @@ export class ChessGame extends BaseGame {
         if (result) {
           this.state.winner = result.winner;
         }
-      } else {
-        // Pre-fetch next AI move for better performance
-        const aiPlayer = this.state.players.find(p => p.type === 'ai');
-        if (aiPlayer && gameData.currentTurn === gameData.playerColors[aiPlayer.id]) {
-          this.preFetchAIMove().catch(error => {
-            console.error('Error pre-fetching AI move:', error);
-          });
-        }
       }
+      // Don't pre-fetch moves in chess - each position needs fresh evaluation
     } catch (error) {
       console.error('Error processing move:', error);
       throw error;
@@ -144,24 +134,7 @@ export class ChessGame extends BaseGame {
   }
 
   async getAIMove(): Promise<ChessMove> {
-    const gameData = this.state.data as ChessGameData;
-    
-    // If we have a pre-fetched move, validate it's still legal
-    if (gameData.aiMoveReady) {
-      const move = gameData.aiMoveReady;
-      
-      // Check if the pre-fetched move is still valid
-      if (this.isValidMove(move, this.state.players.find(p => p.type === 'ai')!.id)) {
-        gameData.aiMoveReady = undefined;
-        return move;
-      }
-      
-      // Pre-fetched move is no longer valid (e.g., we're in check now)
-      console.log('Pre-fetched move no longer valid, generating new move');
-      gameData.aiMoveReady = undefined;
-    }
-    
-    // Generate a new move (especially important when in check)
+    // Always generate fresh moves for chess - no pre-fetching
     const move = await this.generateAIMove();
     if (!move) {
       // Emergency fallback - get any valid move
@@ -179,38 +152,7 @@ export class ChessGame extends BaseGame {
     return move;
   }
 
-  private async preFetchAIMove(): Promise<void> {
-    const gameData = this.state.data as ChessGameData;
-    try {
-      const move = await this.generateAIMove();
-      if (move) {
-        gameData.aiMoveReady = move;
-      } else {
-        // Set a random move as fallback
-        const validMoves = this.chess.moves({ verbose: true });
-        if (validMoves.length > 0) {
-          const randomMove = validMoves[Math.floor(Math.random() * validMoves.length)];
-          gameData.aiMoveReady = {
-            from: randomMove.from,
-            to: randomMove.to,
-            promotion: randomMove.promotion
-          };
-        }
-      }
-    } catch (error) {
-      console.error('Error pre-fetching AI move, using random fallback:', error);
-      // Set a random move as fallback
-      const validMoves = this.chess.moves({ verbose: true });
-      if (validMoves.length > 0) {
-        const randomMove = validMoves[Math.floor(Math.random() * validMoves.length)];
-        gameData.aiMoveReady = {
-          from: randomMove.from,
-          to: randomMove.to,
-          promotion: randomMove.promotion
-        };
-      }
-    }
-  }
+  // Removed preFetchAIMove - not needed for chess
 
   private async generateAIMove(): Promise<ChessMove | null> {
     const gameData = this.state.data as ChessGameData;

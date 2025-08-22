@@ -114,20 +114,52 @@ io.on('connection', (socket) => {
             // AI plays white, so make the first move after a short delay
             setTimeout(async () => {
               try {
-                console.log('AI making first move as white');
-                await gameManager.processAIMove(gameId, aiPlayer.id);
-                const updatedGameState = gameManager.getGameState(gameId);
-                console.log('AI first move completed');
-                io.to(gameId).emit('game-updated', updatedGameState);
+                console.log('AI (white) making opening move');
+                
+                // Try with retry logic for the opening move
+                let attempts = 0;
+                const maxAttempts = 3;
+                let success = false;
+                
+                while (attempts < maxAttempts && !success) {
+                  try {
+                    await gameManager.processAIMove(gameId, aiPlayer.id);
+                    success = true;
+                    const updatedGameState = gameManager.getGameState(gameId);
+                    console.log('AI opening move completed');
+                    io.to(gameId).emit('game-updated', updatedGameState);
+                  } catch (moveError) {
+                    attempts++;
+                    console.error(`AI opening move attempt ${attempts} failed:`, moveError);
+                    if (attempts >= maxAttempts) {
+                      throw moveError;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                  }
+                }
               } catch (error) {
-                console.error('AI first move error:', error);
-                // Still emit the current state so game doesn't freeze
-                const currentState = gameManager.getGameState(gameId);
-                if (currentState) {
-                  io.to(gameId).emit('game-updated', currentState);
+                console.error('AI opening move failed after retries:', error);
+                // Make a simple opening move as fallback
+                try {
+                  const fallbackMove = {
+                    playerId: aiPlayer.id,
+                    gameId,
+                    move: { from: 'e2', to: 'e4' }, // King's pawn opening
+                    timestamp: Date.now()
+                  };
+                  await gameManager.processMove(gameId, fallbackMove);
+                  const updatedGameState = gameManager.getGameState(gameId);
+                  io.to(gameId).emit('game-updated', updatedGameState);
+                  console.log('Used fallback opening move e2-e4');
+                } catch (fallbackError) {
+                  console.error('Even fallback opening move failed:', fallbackError);
+                  const currentState = gameManager.getGameState(gameId);
+                  if (currentState) {
+                    io.to(gameId).emit('game-updated', currentState);
+                  }
                 }
               }
-            }, 1500);
+            }, 1000); // Reduced delay for better UX
           }
         }
       }
