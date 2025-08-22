@@ -90,11 +90,23 @@ export class ChessGame extends BaseGame {
     const chessMove = move.move as ChessMove;
     
     try {
-      const result = this.chess.move({
+      // Check if this is actually a promotion move
+      const piece = this.chess.get(chessMove.from as any);
+      const isPromotion = piece && piece.type === 'p' && 
+        ((piece.color === 'w' && chessMove.to[1] === '8') || 
+         (piece.color === 'b' && chessMove.to[1] === '1'));
+
+      const moveOptions: any = {
         from: chessMove.from,
-        to: chessMove.to,
-        promotion: chessMove.promotion || 'q'
-      });
+        to: chessMove.to
+      };
+
+      // Only add promotion if it's actually a pawn reaching the last rank
+      if (isPromotion) {
+        moveOptions.promotion = chessMove.promotion || 'q';
+      }
+
+      const result = this.chess.move(moveOptions);
 
       if (!result) {
         throw new Error('Invalid chess move');
@@ -134,12 +146,22 @@ export class ChessGame extends BaseGame {
   async getAIMove(): Promise<ChessMove> {
     const gameData = this.state.data as ChessGameData;
     
+    // If we have a pre-fetched move, validate it's still legal
     if (gameData.aiMoveReady) {
       const move = gameData.aiMoveReady;
+      
+      // Check if the pre-fetched move is still valid
+      if (this.isValidMove(move, this.state.players.find(p => p.type === 'ai')!.id)) {
+        gameData.aiMoveReady = undefined;
+        return move;
+      }
+      
+      // Pre-fetched move is no longer valid (e.g., we're in check now)
+      console.log('Pre-fetched move no longer valid, generating new move');
       gameData.aiMoveReady = undefined;
-      return move;
     }
     
+    // Generate a new move (especially important when in check)
     const move = await this.generateAIMove();
     if (!move) {
       // Emergency fallback - get any valid move
@@ -205,24 +227,25 @@ export class ChessGame extends BaseGame {
       return `${h.move.from}-${h.move.to}`;
     }).join(', ');
 
+    const isInCheck = this.chess.isCheck();
     const prompt = `You are playing chess as ${aiColor === 'w' ? 'White' : 'Black'}.
     
 Current board position (FEN): ${this.chess.fen()}
 Recent moves: ${recentMoves || 'Opening position'}
 
 Game state:
-- Check: ${this.chess.isCheck()}
+- Check: ${isInCheck}${isInCheck ? ' (YOU MUST MOVE OUT OF CHECK!)' : ''}
 - Pieces in play: ${this.getPieceCount()}
 
-Valid moves available:
+Valid moves available${isInCheck ? ' (ONLY moves that get out of check)' : ''}:
 ${validMoves.slice(0, 20).map(m => `${m.from}-${m.to}: ${m.san}`).join('\n')}
 ${validMoves.length > 20 ? `... and ${validMoves.length - 20} more moves` : ''}
 
-Select the best strategic move. Consider:
-1. Tactical opportunities (captures, forks, pins)
+${isInCheck ? 'IMPORTANT: You are in CHECK! You MUST select a move that removes your king from check. Only the moves listed above are legal.' : 'Select the best strategic move. Consider:'}
+${!isInCheck ? `1. Tactical opportunities (captures, forks, pins)
 2. Positional advantages (center control, piece development)
 3. King safety
-4. Endgame principles if applicable
+4. Endgame principles if applicable` : ''}
 
 Respond with ONLY the move in format: from-to (e.g., "e2-e4")`;
 
@@ -353,11 +376,24 @@ Respond with ONLY the move in format: from-to (e.g., "e2-e4")`;
     
     try {
       const testChess = new Chess(this.chess.fen());
-      const result = testChess.move({
+      
+      // Check if this is actually a promotion move
+      const piece = testChess.get(chessMove.from as any);
+      const isPromotion = piece && piece.type === 'p' && 
+        ((piece.color === 'w' && chessMove.to[1] === '8') || 
+         (piece.color === 'b' && chessMove.to[1] === '1'));
+
+      const moveOptions: any = {
         from: chessMove.from,
-        to: chessMove.to,
-        promotion: chessMove.promotion || 'q'
-      });
+        to: chessMove.to
+      };
+
+      // Only add promotion if it's actually a pawn reaching the last rank
+      if (isPromotion) {
+        moveOptions.promotion = chessMove.promotion || 'q';
+      }
+
+      const result = testChess.move(moveOptions);
       return result !== null;
     } catch {
       return false;

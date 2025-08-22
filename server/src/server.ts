@@ -184,9 +184,30 @@ io.on('connection', (socket) => {
         if (aiPlayer) {
           try {
             console.log('Processing AI move for game:', gameId);
-            await gameManager.processAIMove(gameId, aiPlayer.id);
-            gameState = gameManager.getGameState(gameId);
-            console.log('AI move successful, game status:', gameState?.status);
+            
+            // Try to process AI move with retry logic for check situations
+            let aiMoveAttempts = 0;
+            const maxAttempts = 3;
+            let aiMoveSuccess = false;
+            
+            while (aiMoveAttempts < maxAttempts && !aiMoveSuccess) {
+              try {
+                await gameManager.processAIMove(gameId, aiPlayer.id);
+                aiMoveSuccess = true;
+                gameState = gameManager.getGameState(gameId);
+                console.log('AI move successful, game status:', gameState?.status);
+              } catch (moveError) {
+                aiMoveAttempts++;
+                console.error(`AI move attempt ${aiMoveAttempts} failed:`, moveError);
+                
+                if (aiMoveAttempts >= maxAttempts) {
+                  throw moveError;
+                }
+                
+                // Wait a bit before retrying
+                await new Promise(resolve => setTimeout(resolve, 500));
+              }
+            }
             
             io.to(gameId).emit('game-updated', gameState);
             
@@ -207,14 +228,16 @@ io.on('connection', (socket) => {
               io.to(gameId).emit('game-finished', gameState);
             }
           } catch (error) {
-            console.error('AI move error:', error);
+            console.error('AI move error after retries:', error);
             // Don't let the game freeze - emit an update even on error
             const currentState = gameManager.getGameState(gameId);
             if (currentState) {
               io.to(gameId).emit('game-updated', currentState);
             }
-            // Notify user of the error
-            io.to(gameId).emit('error', { message: 'AI had trouble making a move. You can continue playing.' });
+            // Notify user of the error with more specific message
+            io.to(gameId).emit('error', { 
+              message: 'AI is having difficulty finding a legal move. You can continue playing or start a new game.' 
+            });
           }
         }
       }
