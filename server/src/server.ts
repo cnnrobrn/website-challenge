@@ -65,6 +65,7 @@ io.on('connection', (socket) => {
       // For word unscrambler, poll for state changes during round transitions
       if (data.gameType === 'word-unscrambler') {
         let lastRoundComplete = false;
+        let lastAIWonImmediately = false;
         
         const pollInterval = setInterval(() => {
           const gameState = gameManager.getGameState(gameId);
@@ -93,13 +94,22 @@ io.on('connection', (socket) => {
           // Check if the game state has changed (new round started)
           const gameData = gameState?.data as any;
           if (gameData) {
+            // Check for immediate AI win
+            if (gameData.aiWonImmediately && !lastAIWonImmediately) {
+              console.log('AI won immediately! Broadcasting update...');
+              io.to(gameId).emit('game-updated', gameState);
+              lastAIWonImmediately = true;
+            } else if (!gameData.aiWonImmediately) {
+              lastAIWonImmediately = false;
+            }
+            
             // Emit update when transitioning from complete to new round
             if (lastRoundComplete && !gameData.roundComplete && gameData.currentWord) {
               io.to(gameId).emit('game-updated', gameState);
             }
             lastRoundComplete = gameData.roundComplete;
           }
-        }, 500);
+        }, 100); // Reduced interval for faster detection
         
         gameStatePolling.set(gameId, pollInterval);
       }

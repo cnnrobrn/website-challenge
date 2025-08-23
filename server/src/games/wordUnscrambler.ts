@@ -19,7 +19,10 @@ interface WordUnscramblerGameData {
   aiGuessTime: number | null;
   aiResponseReady: boolean;
   preFetchedAIGuess?: string;
+  aiResponseTime?: number; // When AI actually responds
+  aiThinkingStartTime?: number; // When AI starts thinking
   lastAIPrompt?: string; // Store the last prompt sent to OpenAI
+  aiWonImmediately?: boolean; // Flag for immediate AI win
   wordHistory: Array<{
     round: number;
     word: string;
@@ -101,7 +104,10 @@ export class WordUnscramblerGame extends BaseGame {
     gameData.humanGuessTime = null;
     gameData.aiGuessTime = null;
     gameData.aiResponseReady = false;
+    gameData.aiResponseTime = undefined;
+    gameData.aiThinkingStartTime = Date.now();
 
+    // Start AI thinking immediately when round starts
     this.preFetchAIMove();
   }
 
@@ -132,13 +138,34 @@ export class WordUnscramblerGame extends BaseGame {
 
       const aiMove = await this.openAI.getGameMove('word-unscrambler', gameData, prompt);
 
+      // AI has responded, record the time immediately
+      const responseTime = Date.now();
       gameData.preFetchedAIGuess = (aiMove.guess || '').trim().toUpperCase();
+      gameData.aiResponseTime = responseTime - gameData.roundStartTime;
       gameData.aiResponseReady = true;
+      
+      // If AI gets it right and human hasn't guessed yet, AI wins immediately
+      if (gameData.preFetchedAIGuess === gameData.currentWord && !gameData.humanGuess) {
+        // Set AI's guess and trigger evaluation
+        gameData.aiGuess = gameData.preFetchedAIGuess;
+        gameData.aiGuessTime = responseTime;
+        
+        // Check if we should evaluate immediately (human hasn't responded)
+        if (!gameData.humanGuess) {
+          // Give human a small grace period (500ms) to submit
+          setTimeout(() => {
+            if (!gameData.humanGuess && !gameData.roundComplete) {
+              this.evaluateRoundWithAIWin();
+            }
+          }, 500);
+        }
+      }
     } catch (error) {
       console.error('Failed to pre-fetch AI move:', error);
       // AI fails - no fallback
       gameData.preFetchedAIGuess = undefined;
       gameData.aiResponseReady = false;
+      gameData.aiResponseTime = undefined;
     }
   }
 
@@ -168,28 +195,98 @@ export class WordUnscramblerGame extends BaseGame {
       gameData.humanGuess = guess;
       gameData.humanGuessTime = currentTime;
 
-      await this.simulateAIResponse();
-      
-      if (gameData.aiGuess) {
+      // Check if AI has already responded
+      if (gameData.aiResponseReady && gameData.preFetchedAIGuess) {
+        // AI already has a response, use it immediately
+        gameData.aiGuess = gameData.preFetchedAIGuess;
+        gameData.aiGuessTime = gameData.roundStartTime + (gameData.aiResponseTime || 0);
         await this.evaluateRound();
+      } else {
+        // AI hasn't responded yet, wait for it
+        await this.waitForAIResponse();
+        if (gameData.aiGuess) {
+          await this.evaluateRound();
+        }
       }
     }
   }
 
-  private async simulateAIResponse(): Promise<void> {
+  private async waitForAIResponse(): Promise<void> {
     const gameData = this.state.data as WordUnscramblerGameData;
     
     if (gameData.aiGuess) return;
 
-    const aiDelay = Math.random() * 1000 + 500;
-    await new Promise(resolve => setTimeout(resolve, aiDelay));
+    // If AI is still thinking, wait for it (with a timeout)
+    const maxWaitTime = 5000; // 5 seconds max
+    const startWait = Date.now();
+    
+    while (!gameData.aiResponseReady && (Date.now() - startWait) < maxWaitTime) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
 
     const aiPlayer = this.state.players.find(p => p.type === 'ai');
     if (!aiPlayer) return;
 
-    // If AI has no pre-fetched guess, it fails (gives empty/wrong answer)
-    gameData.aiGuess = gameData.preFetchedAIGuess || 'FAILED';
-    gameData.aiGuessTime = Date.now();
+    // If AI has a pre-fetched guess, use it with the recorded time
+    if (gameData.preFetchedAIGuess && gameData.aiResponseTime !== undefined) {
+      gameData.aiGuess = gameData.preFetchedAIGuess;
+      gameData.aiGuessTime = gameData.roundStartTime + gameData.aiResponseTime;
+    } else {
+      // AI failed to respond in time
+      gameData.aiGuess = 'FAILED';
+      gameData.aiGuessTime = Date.now();
+      gameData.aiResponseTime = Date.now() - gameData.roundStartTime;
+    }
+  }
+  
+  private async evaluateRoundWithAIWin(): Promise<void> {
+    const gameData = this.state.data as WordUnscramblerGameData;
+    const aiPlayer = this.state.players.find(p => p.type === 'ai');
+    
+    if (!aiPlayer || gameData.roundComplete) return;
+    
+    // AI wins automatically if it got it right first
+    aiPlayer.score++;
+    gameData.roundWinner = aiPlayer.id;
+    gameData.roundComplete = true;
+    gameData.roundEndTime = Date.now();
+    gameData.aiWonImmediately = true; // Set flag for immediate win
+    
+    // Set human as no response if they haven't answered
+    if (!gameData.humanGuess) {
+      gameData.humanGuess = '';
+    }
+    
+    gameData.wordHistory.push({
+      round: this.state.currentRound,
+      word: gameData.currentWord,
+      scrambled: gameData.scrambledWord,
+      humanGuess: gameData.humanGuess || '',
+      aiGuess: gameData.aiGuess || '',
+      winner: aiPlayer.id,
+      timeElapsed: gameData.roundEndTime - gameData.roundStartTime,
+      humanResponseTime: gameData.humanGuessTime ? gameData.humanGuessTime - gameData.roundStartTime : undefined,
+      aiResponseTime: gameData.aiResponseTime
+    });
+    
+    // Mark that we need a round transition after a delay
+    this.roundTransitionPending = true;
+    
+    setTimeout(async () => {
+      this.state.currentRound++;
+      gameData.aiWonImmediately = false; // Clear flag for next round
+      
+      if (this.state.currentRound >= this.state.maxRounds) {
+        this.state.status = 'finished';
+        const result = this.checkWinCondition();
+        if (result) {
+          this.state.winner = result.winner;
+        }
+      } else {
+        await this.startNewRound();
+      }
+      this.roundTransitionPending = false;
+    }, 3000);
   }
 
   private async evaluateRound(): Promise<void> {
@@ -205,8 +302,10 @@ export class WordUnscramblerGame extends BaseGame {
     let winner: string | 'tie';
     
     if (humanCorrect && aiCorrect) {
+      // Both got it right, compare times
       const humanTime = (gameData.humanGuessTime || 0) - gameData.roundStartTime;
-      const aiTime = (gameData.aiGuessTime || 0) - gameData.roundStartTime;
+      // Use the pre-calculated AI response time
+      const aiTime = gameData.aiResponseTime || ((gameData.aiGuessTime || 0) - gameData.roundStartTime);
       
       if (humanTime < aiTime) {
         winner = humanPlayer.id;
@@ -240,7 +339,7 @@ export class WordUnscramblerGame extends BaseGame {
       winner: winner,
       timeElapsed: gameData.roundEndTime - gameData.roundStartTime,
       humanResponseTime: gameData.humanGuessTime ? gameData.humanGuessTime - gameData.roundStartTime : undefined,
-      aiResponseTime: gameData.aiGuessTime ? gameData.aiGuessTime - gameData.roundStartTime : undefined
+      aiResponseTime: gameData.aiResponseTime || (gameData.aiGuessTime ? gameData.aiGuessTime - gameData.roundStartTime : undefined)
     });
 
     // Mark that we need a round transition after a delay

@@ -1,3 +1,5 @@
+import { DatabaseService } from './database';
+
 export interface LeaderboardEntry {
   playerName: string;
   score: number;
@@ -43,6 +45,22 @@ export interface WinStatistics {
 
 export class LeaderboardService {
   private entries: LeaderboardEntry[] = [];
+  private db: DatabaseService;
+
+  constructor() {
+    this.db = new DatabaseService();
+    this.loadEntriesFromDatabase();
+  }
+
+  private loadEntriesFromDatabase(): void {
+    try {
+      this.entries = this.db.getAllEntries();
+      console.log(`Loaded ${this.entries.length} leaderboard entries from database`);
+    } catch (error) {
+      console.error('Error loading leaderboard from database:', error);
+      this.entries = [];
+    }
+  }
 
   addEntry(playerName: string, score: number, gameType: string, isHuman: boolean = true, isWinner: boolean = false): void {
     const entry: LeaderboardEntry = {
@@ -56,9 +74,16 @@ export class LeaderboardService {
     
     this.entries.push(entry);
     
-    // Keep only the last 1000 entries to prevent memory issues
+    try {
+      this.db.addEntry(entry);
+    } catch (error) {
+      console.error('Error saving entry to database:', error);
+    }
+    
+    // Keep only the last 1000 entries in memory
     if (this.entries.length > 1000) {
       this.entries = this.entries.slice(-1000);
+      this.db.cleanupOldEntries(1000);
     }
   }
 
@@ -136,6 +161,11 @@ export class LeaderboardService {
 
   clearLeaderboard(): void {
     this.entries = [];
+    try {
+      this.db.clearLeaderboard();
+    } catch (error) {
+      console.error('Error clearing leaderboard in database:', error);
+    }
   }
 
   getWinStatistics(): WinStatistics {
